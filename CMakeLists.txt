@@ -27,7 +27,14 @@ target_compile_definitions(Stormlaser_VulkanHppConfig INTERFACE
     VULKAN_HPP_DISPATCH_LOADER_DYNAMIC=1)
 
 add_executable (${PROJECT_NAME} 
-    src/Main.cpp)
+    src/Application.cpp
+    src/Camera.cpp
+    src/CameraController.cpp
+    src/Main.cpp
+    src/TextureProcessor.cpp
+    src/VulkanDispatch.cpp
+    src/Window.cpp
+    vendors/StbImage.cpp)
 set_target_properties (${PROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${PROJECT_DIR})
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_20)
 target_link_libraries(${PROJECT_NAME} PRIVATE
