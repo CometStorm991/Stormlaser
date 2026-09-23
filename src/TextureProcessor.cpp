@@ -1,15 +1,11 @@
 #include "TextureProcessor.hpp"
 
-void TextureProcessor::processImages(fastgltf::Asset asset, vk::Queue queue, vk::CommandPool commandPool)
+std::vector<VulkanTexture> TextureProcessor::processImages(const std::vector<TextureProcessRequest>& textureProcessRequests)
 {
-    std::vector<TextureData> textureDatas;
-    textureDatas.reserve(asset.images.size());
     vk::DeviceSize totalSize = 0;
-    for (const fastgltf::Image& image : asset.images)
+    for (const TextureProcessRequest& textureProcessRequest : textureProcessRequests)
     {
-        textureDatas.push_back(getDataFromGLTFImage(asset, image));
-        const TextureData& textureData = textureDatas[textureDatas.size() - 1];
-        vk::DeviceSize paddedImageSize = getPaddedImageSize(textureData.width, textureData.height);
+        vk::DeviceSize paddedImageSize = getPaddedImageSize(textureProcessRequest.width, textureProcessRequest.height);
         totalSize += paddedImageSize;
     }
 
@@ -19,79 +15,47 @@ void TextureProcessor::processImages(fastgltf::Asset asset, vk::Queue queue, vk:
     void* data = stagingBufferMemory.mapMemory(0, totalSize);
     
     vk::DeviceSize offset = 0;
-    std::vector<vk::raii::Image> images;
+    std::vector<VulkanTexture> vulkanTextures;
     std::vector<vk::ImageMemoryBarrier2> toDstBarriers;
     std::vector<vk::ImageMemoryBarrier2> toReadBarriers;
-    for (const TextureData& textureData : textureDatas)
+    for (const TextureProcessRequest& textureProcessRequest : textureProcessRequests)
     {
-        vk::DeviceSize paddedImageSize = getPaddedImageSize(textureData.width, textureData.height);
-        vk::DeviceSize imageSize = textureData.width * textureData.height * desiredChannels;
-        memcpy(static_cast<char*>(data) + offset, textureData.data, imageSize);
+        vk::DeviceSize paddedImageSize = getPaddedImageSize(textureProcessRequest.width, textureProcessRequest.height);
+        vk::DeviceSize imageSize = textureProcessRequest.width * textureProcessRequest.height * textureProcessRequest.nrChannels;
+        memcpy(static_cast<char*>(data) + offset, textureProcessRequest.pixelData, imageSize);
         offset += paddedImageSize;
         
-        auto [image, imageMemory] = createImage(textureData.width,
-            textureData.height,
-            vk::Format::eR8G8B8A8Srgb,
+        auto [image, imageMemory] = createImage(textureProcessRequest.width,
+            textureProcessRequest.height,
+            textureProcessRequest.format,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        images.push_back(std::move(image));
+        
+        //image must be std moved
+        vk::raii::ImageView imageView = createImageView(image, textureProcessRequest.format, vk::ImageAspectFlagBits::eColor);
 
         toDstBarriers.push_back(createBarrier(image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal));
         toReadBarriers.push_back(createBarrier(image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal));
+
+        vulkanTextures.emplace_back(std::move(image), std::move(imageView), textureProcessRequest.format, 1);
     }
 
     vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
     commandBuffer.pipelineBarrier2({ .imageMemoryBarrierCount = static_cast<uint32_t>(toDstBarriers.size()), .pImageMemoryBarriers = toDstBarriers.data() });
 
-    for (int i = 0; i < images.size(); ++i)
+    for (int i = 0; i < textureProcessRequests.size(); ++i)
     {
-        vk::Image image = images[i];
-        TextureData textureData = textureDatas[i];
-        copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(textureData.width), static_cast<uint32_t>(textureData.height));
+        vk::Image image = vulkanTextures[i].image;
+        TextureProcessRequest textureProcessRequest = textureProcessRequests[i];
+        copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(textureProcessRequest.width), static_cast<uint32_t>(textureProcessRequest.height));
     }
 
     endSingleTimeCommands(std::move(commandBuffer), queue);
 
     stagingBufferMemory.unmapMemory();
-}
 
-TextureProcessor::TextureData TextureProcessor::getDataFromGLTFImage(const fastgltf::Asset& asset, const fastgltf::Image& image)
-{
-    int width, height, nrChannels;
-    unsigned char* data;
-
-    std::visit(fastgltf::visitor{
-        [&](fastgltf::sources::URI& filePath) {
-            assert(filePath.fileByteOffset == 0); // We don't support offsets with stbi.
-            assert(filePath.uri.isLocalPath()); // We're only capable of loading local files.
-
-            const std::string path(filePath.uri.path().begin(), filePath.uri.path().end()); // Thanks C++.
-            data = stbi_load(path.c_str(), &width, &height, &nrChannels, desiredChannels);
-        },
-        [&](fastgltf::sources::Array& vector) {
-            data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data()), static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, desiredChannels);
-        },
-        [&](fastgltf::sources::BufferView& view) {
-            auto& bufferView = asset.bufferViews[view.bufferViewIndex];
-            auto& buffer = asset.buffers[bufferView.bufferIndex];
-
-            std::visit(fastgltf::visitor {
-                // We only care about VectorWithMime here, because we specify LoadExternalBuffers, meaning
-                // all buffers are already loaded into a vector.
-                [](auto& arg) {},
-                [&](fastgltf::sources::Array& vector) {
-                    data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data() + bufferView.byteOffset),
-                                                                static_cast<int>(bufferView.byteLength), &width, &height, &nrChannels, desiredChannels);
-                }
-            }, buffer.data);
-        },
-        [](auto& arg) {
-            std::cerr << "GLTF Image failed to load!\n";
-        }
-    }, image.data);
-
-    return TextureData(width, height, nrChannels, data);
+    return vulkanTextures;
 }
 
 std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> TextureProcessor::createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
@@ -228,4 +192,14 @@ void TextureProcessor::copyBufferToImage(vk::raii::CommandBuffer& commandBuffer,
                            .imageExtent = {width, height, 1} };
 
     commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+}
+
+vk::raii::ImageView TextureProcessor::createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags)
+{
+    vk::ImageViewCreateInfo viewInfo{
+        .image = image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = format,
+        .subresourceRange = {.aspectMask = aspectFlags, .baseMipLevel = 0, .levelCount = 1, .baseArrayLayer = 0, .layerCount = 1} };
+    return vk::raii::ImageView(device, viewInfo);
 }

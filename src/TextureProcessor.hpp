@@ -7,16 +7,21 @@
 #include <fastgltf/tools.hpp>
 #include <stb_image.h>
 
+#include "TextureProcessRequest.hpp"
+#include "VulkanTexture.hpp"
+
 class TextureProcessor
 {
 public:
-	TextureProcessor(vk::PhysicalDevice physicalDevice, const vk::raii::Device& device)
-		: physicalDevice(physicalDevice), device(device) {};
+	TextureProcessor(vk::PhysicalDevice physicalDevice, const vk::raii::Device& device, vk::Queue queue, vk::CommandPool commandPool)
+		: physicalDevice(physicalDevice), device(device), queue(queue), commandPool(commandPool) {}
 
-	void processImages(fastgltf::Asset asset, vk::Queue queue, vk::CommandPool commandPool);
+	std::vector<VulkanTexture> processImages(const std::vector<TextureProcessRequest>& textureProcessRequests);
 private:
 	vk::PhysicalDevice physicalDevice;
 	const vk::raii::Device& device;
+	vk::Queue queue;
+	vk::CommandPool commandPool;
 
 	int desiredChannels = STBI_rgb_alpha;
 
@@ -33,6 +38,7 @@ private:
 	};
 
 	TextureData getDataFromGLTFImage(const fastgltf::Asset& asset, const fastgltf::Image& image);
+	TextureData generateDefaultImage();
 	std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
 	uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 	vk::DeviceSize getPaddedImageSize(int width, int height);
@@ -41,6 +47,7 @@ private:
 	void endSingleTimeCommands(vk::raii::CommandBuffer&& commandBuffer, vk::Queue queue);
 	vk::ImageMemoryBarrier2 createBarrier(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 	void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::Image image, uint32_t width, uint32_t height);
+	vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags);
 
 	int roundUp(int num, int x) {
 		return ((num + x - 1) / x) * x;

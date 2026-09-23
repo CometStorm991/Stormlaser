@@ -24,7 +24,11 @@
 #include <glm/gtx/hash.hpp>
 #include <stb_image.h>
 
+#include "BindlessRegistry.hpp"
 #include "CameraController.hpp"
+#include "GLTFProcessor.hpp"
+#include "TextureProcessor.hpp"
+#include "VulkanTexture.hpp"
 #include "Window.hpp"
 
 #ifdef NDEBUG
@@ -122,7 +126,8 @@ private:
 	vk::Extent2D swapChainExtent;
 	vk::SurfaceFormatKHR swapChainSurfaceFormat;
 
-	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
+	vk::raii::DescriptorSetLayout bindlessDescriptorSetLayout = nullptr;
+	vk::raii::DescriptorSetLayout perFrameDescriptorSetLayout = nullptr;
 
 	vk::raii::PipelineLayout pipelineLayout = nullptr;
 	vk::raii::Pipeline graphicsPipeline = nullptr;
@@ -134,8 +139,10 @@ private:
 	vk::raii::ImageView    depthImageView = nullptr;
 	vk::Format depthFormat = vk::Format::eUndefined;
 
-	vk::raii::Image        textureImage = nullptr;
-	vk::raii::DeviceMemory textureImageMemory = nullptr;
+	uint32_t maxTextures;
+	std::vector<VulkanTexture> vulkanTextures;
+	std::vector<uint32_t> textureSlots;
+	BindlessRegistry bindlessRegistry;
 
 	vk::raii::ImageView textureImageView = nullptr;
 	vk::raii::Sampler textureSampler = nullptr;
@@ -151,8 +158,10 @@ private:
 	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
 	std::vector<void*>                 uniformBuffersMapped;
 
-	vk::raii::DescriptorPool descriptorPool = nullptr;
-	std::vector<vk::raii::DescriptorSet> descriptorSets;
+	vk::raii::DescriptorPool bindlessDescriptorPool = nullptr;
+	std::vector<vk::raii::DescriptorSet> bindlessDescriptorSets;
+	vk::raii::DescriptorPool perFrameDescriptorPool = nullptr;
+	std::vector<vk::raii::DescriptorSet> perFrameDescriptorSets;
 
 	std::vector<vk::raii::CommandBuffer> commandBuffers;
 
@@ -207,13 +216,13 @@ private:
 	vk::Format findDepthFormat();
 	vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
 
-	void createTextureImage();
+	//void createTextureImage();
 	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
 		uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 	void transitionImageLayout(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 	void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
 
-	void createTextureImageView();
+	//void createTextureImageView();
 	void createTextureSampler();
 
 	bool loadGltf(std::filesystem::path path, fastgltf::Asset& asset);

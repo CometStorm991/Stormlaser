@@ -22,3 +22,5 @@ ipch/
 .vscode/
 
 *.spv
+
+assets/licensed/
