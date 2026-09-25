@@ -46,7 +46,7 @@ private:
 	vk::raii::CommandBuffer beginSingleTimeCommands(vk::CommandPool commandPool);
 	void endSingleTimeCommands(vk::raii::CommandBuffer&& commandBuffer, vk::Queue queue);
 	vk::ImageMemoryBarrier2 createBarrier(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
-	void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::Image image, uint32_t width, uint32_t height);
+	void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::Image image, uint32_t width, uint32_t height, vk::DeviceSize offset);
 	vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags);
 
 	int roundUp(int num, int x) {

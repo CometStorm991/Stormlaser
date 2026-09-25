@@ -460,8 +460,8 @@ void Application::createGraphicsPipeline()
 	};
 
 	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-		.setLayoutCount = 1,
-		.pSetLayouts = &*bindlessDescriptorSetLayout,
+		.setLayoutCount = layouts.size(),
+		.pSetLayouts = layouts.data(),
 		.pushConstantRangeCount = 1,
 		.pPushConstantRanges = &pushRange };
 
@@ -706,13 +706,13 @@ bool Application::loadGltf(std::filesystem::path path, fastgltf::Asset& asset)
 			return false;
 		}
 
-		auto asset = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
-		if (asset.error() != fastgltf::Error::None) {
-			std::cerr << "Failed to load glTF: " << fastgltf::getErrorMessage(asset.error()) << '\n';
+		auto expectedAsset = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
+		if (expectedAsset.error() != fastgltf::Error::None) {
+			std::cerr << "Failed to load glTF: " << fastgltf::getErrorMessage(expectedAsset.error()) << '\n';
 			return false;
 		}
 
-		asset = std::move(asset.get());
+		asset = std::move(expectedAsset.get());
 	}
 
 	return true;
@@ -721,6 +721,7 @@ bool Application::loadGltf(std::filesystem::path path, fastgltf::Asset& asset)
 void Application::loadModel()
 {
 	std::string path = "assets/licensed/Sponza/Sponza.gltf";
+	std::string parentDirectory = "asset/licensed/Sponza/";
 	fastgltf::Asset asset;
 	if (!loadGltf(std::filesystem::path{ path }, asset))
 	{
@@ -728,7 +729,7 @@ void Application::loadModel()
 	}
 
 	GLTFProcessor gltfProcessor;
-	std::vector<TextureProcessRequest> textureProcessRequests = gltfProcessor.processImages(asset);
+	std::vector<TextureProcessRequest> textureProcessRequests = gltfProcessor.processImages(asset, parentDirectory);
 
 	TextureProcessor textureProcessor{ physicalDevice, device, queue, commandPool };
 	vulkanTextures = textureProcessor.processImages(textureProcessRequests);
@@ -740,24 +741,26 @@ void Application::loadModel()
 		uint32_t slot = bindlessRegistry.add(std::move(vulkanTexture), textureSampler);
 		textureSlots.push_back(slot);
 	}
-	
-	// Get the maximum number of textures 
+	vulkanTextures.clear(); // All the VulkanTextures were moved, so no point in keeping the vector
+
 
 	vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}},
+		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f}},
+		{{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}},
+		{{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}},
 
+		/*
 		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
 		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
 		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
 		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
+		*/
 	};
 
 	indices = {
 		0, 1, 2, 2, 3, 0,
-		4, 5, 6, 6, 7, 4
+		//4, 5, 6, 6, 7, 4
 	};
 }
 
@@ -864,7 +867,7 @@ void Application::createDescriptorSets()
 			vk::DescriptorBufferInfo bufferInfo{ .buffer = uniformBuffers[i], .offset = 0, .range = sizeof(UniformBufferObject) };
 			std::array<vk::WriteDescriptorSet, 1> descriptorWrites{
 				{{
-					.dstSet = bindlessDescriptorSets[i],
+					.dstSet = perFrameDescriptorSets[i],
 					.dstBinding = 0,
 					.dstArrayElement = 0,
 					.descriptorCount = 1,

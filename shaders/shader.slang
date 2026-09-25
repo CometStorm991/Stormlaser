@@ -4,14 +4,16 @@ struct VSInput
     float2 inTexCoords;
 };
 
+/*
 struct UniformBuffer {
     float4x4 model;
     float4x4 view;
     float4x4 proj;
 };
 ConstantBuffer<UniformBuffer> ubo;
+*/
 
-Sampler2D texture;
+[[vk::binding(0, 0)]] Sampler2D textures[];
 
 struct VSOutput
 {
@@ -23,7 +25,8 @@ struct VSOutput
 VSOutput vertMain(VSInput input)
 {
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 1.0))));
+    // output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 1.0))));
+    output.pos = float4(input.inPosition, 1.0);
     output.texCoords = input.inTexCoords;
     return output;
 }
@@ -31,5 +34,5 @@ VSOutput vertMain(VSInput input)
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET
 {
-    return texture.Sample(vertIn.texCoords);
+    return textures[1].Sample(vertIn.texCoords);
 }

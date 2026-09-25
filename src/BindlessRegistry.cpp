@@ -17,7 +17,15 @@ uint32_t BindlessRegistry::add(VulkanTexture&& tex, const vk::raii::Sampler& sam
         .imageView = *tex.imageView,
         .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal });
     pendingSlots.push_back(slot);
-    textures[slot] = std::move(tex);   // BindlessRegistry owns the image lifetime now
+    // BindlessRegistry owns the image lifetime now
+    if (!textures.contains(slot))
+    {
+        textures.insert({ slot, std::move(tex) });
+    }
+    else
+    {
+        textures.at(slot) = std::move(tex);
+    }
     return slot;
 }
 

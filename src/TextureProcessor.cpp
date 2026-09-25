@@ -38,17 +38,24 @@ std::vector<VulkanTexture> TextureProcessor::processImages(const std::vector<Tex
         toDstBarriers.push_back(createBarrier(image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal));
         toReadBarriers.push_back(createBarrier(image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal));
 
-        vulkanTextures.emplace_back(std::move(image), std::move(imageView), textureProcessRequest.format, 1);
+        vulkanTextures.emplace_back(std::move(image), std::move(imageMemory), std::move(imageView), textureProcessRequest.format, 1);
     }
 
     vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
     commandBuffer.pipelineBarrier2({ .imageMemoryBarrierCount = static_cast<uint32_t>(toDstBarriers.size()), .pImageMemoryBarriers = toDstBarriers.data() });
 
+    offset = 0;
     for (int i = 0; i < textureProcessRequests.size(); ++i)
     {
         vk::Image image = vulkanTextures[i].image;
         TextureProcessRequest textureProcessRequest = textureProcessRequests[i];
-        copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(textureProcessRequest.width), static_cast<uint32_t>(textureProcessRequest.height));
+
+        vk::DeviceSize paddedImageSize = getPaddedImageSize(textureProcessRequest.width, textureProcessRequest.height);
+        vk::DeviceSize imageSize = textureProcessRequest.width * textureProcessRequest.height * textureProcessRequest.nrChannels;
+
+        copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(textureProcessRequest.width), static_cast<uint32_t>(textureProcessRequest.height), offset);
+
+        offset += paddedImageSize;
     }
 
     endSingleTimeCommands(std::move(commandBuffer), queue);
@@ -182,9 +189,13 @@ vk::ImageMemoryBarrier2 TextureProcessor::createBarrier(const vk::raii::Image& i
         .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1} };
 }
 
-void TextureProcessor::copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::Image image, uint32_t width, uint32_t height)
+void TextureProcessor::copyBufferToImage(
+    vk::raii::CommandBuffer& commandBuffer,
+    const vk::raii::Buffer& buffer,
+    vk::Image image,
+    uint32_t width, uint32_t height, vk::DeviceSize offset)
 {
-    vk::BufferImageCopy region{ .bufferOffset = 0,
+    vk::BufferImageCopy region{ .bufferOffset = offset,
                            .bufferRowLength = 0,
                            .bufferImageHeight = 0,
                            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},

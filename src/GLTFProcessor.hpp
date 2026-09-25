@@ -13,7 +13,7 @@
 class GLTFProcessor
 {
 public:
-	 std::vector<TextureProcessRequest> processImages(const fastgltf::Asset& asset);
+	 std::vector<TextureProcessRequest> processImages(const fastgltf::Asset& asset, const std::string& parentDirectory);
 private:
-	TextureProcessRequest processImage(const fastgltf::Image& image, const fastgltf::Asset& asset);
+	TextureProcessRequest processImage(const fastgltf::Image& image, const fastgltf::Asset& asset, const std::string& parentDirectory);
 };

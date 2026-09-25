@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <unordered_map>
 
 #include "VulkanTexture.hpp"
 
@@ -20,5 +21,5 @@ private:
     std::queue<uint32_t> freeList;
     std::vector<vk::DescriptorImageInfo> pendingInfos;
     std::vector<uint32_t> pendingSlots;
-    std::vector<VulkanTexture> textures;
+    std::unordered_map<uint32_t, VulkanTexture> textures;
 };

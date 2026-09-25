@@ -1,32 +1,33 @@
 #include "GLTFProcessor.hpp"
 
-std::vector<TextureProcessRequest> GLTFProcessor::processImages(const fastgltf::Asset& asset)
+std::vector<TextureProcessRequest> GLTFProcessor::processImages(const fastgltf::Asset& asset, const std::string& parentDirectory)
 {
     std::vector<TextureProcessRequest> textureProcessRequests;
     for (const fastgltf::Image& image : asset.images)
     {
-        textureProcessRequests.push_back(processImage(image, asset));
+        textureProcessRequests.push_back(processImage(image, asset, parentDirectory));
     }
     return textureProcessRequests;
 }
 
-TextureProcessRequest GLTFProcessor::processImage(const fastgltf::Image& image, const fastgltf::Asset& asset)
+TextureProcessRequest GLTFProcessor::processImage(const fastgltf::Image& image, const fastgltf::Asset& asset, const std::string& parentDirectory)
 {
     int width, height, nrChannels;
     unsigned char* data;
-
+    
     std::visit(fastgltf::visitor{
-        [&](fastgltf::sources::URI& filePath) {
+        [&](const fastgltf::sources::URI& filePath) {
             assert(filePath.fileByteOffset == 0); // We don't support offsets with stbi.
             assert(filePath.uri.isLocalPath()); // We're only capable of loading local files.
 
-            const std::string path(filePath.uri.path().begin(), filePath.uri.path().end()); // Thanks C++.
+            std::string path(filePath.uri.path().begin(), filePath.uri.path().end()); // Thanks C++.
+            path = parentDirectory + path;
             data = stbi_load(path.c_str(), &width, &height, &nrChannels, STBI_rgb_alpha);
         },
-        [&](fastgltf::sources::Array& vector) {
+        [&](const fastgltf::sources::Array& vector) {
             data = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(vector.bytes.data()), static_cast<int>(vector.bytes.size()), &width, &height, &nrChannels, STBI_rgb_alpha);
         },
-        [&](fastgltf::sources::BufferView& view) {
+        [&](const fastgltf::sources::BufferView& view) {
             auto& bufferView = asset.bufferViews[view.bufferViewIndex];
             auto& buffer = asset.buffers[bufferView.bufferIndex];
 
@@ -46,6 +47,7 @@ TextureProcessRequest GLTFProcessor::processImage(const fastgltf::Image& image, 
         }, image.data);
 
     return TextureProcessRequest{
+        .pixelData = data,
         .width = static_cast<uint32_t>(width),
         .height = static_cast<uint32_t>(height),
         .nrChannels = static_cast<uint32_t>(nrChannels),
