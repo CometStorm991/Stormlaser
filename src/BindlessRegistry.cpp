@@ -1,6 +1,6 @@
 #include "BindlessRegistry.hpp"
 
-uint32_t BindlessRegistry::add(VulkanTexture&& tex, const vk::raii::Sampler& sampler) {
+uint32_t BindlessRegistry::add(VulkanImage&& tex, const vk::raii::Sampler& sampler) {
     uint32_t slot;
     if (freeList.empty())
     {

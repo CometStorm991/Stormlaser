@@ -670,78 +670,90 @@ void Application::createTextureSampler()
 	textureSampler = vk::raii::Sampler(device, samplerInfo);
 }
 
-bool Application::loadGltf(std::filesystem::path path, fastgltf::Asset& asset)
-{
-	if (!std::filesystem::exists(path)) {
-		std::cout << "Failed to find " << path << '\n';
-		return false;
-	}
-
-	if constexpr (std::is_same_v<std::filesystem::path::value_type, wchar_t>) {
-		std::wcout << "Loading " << path << '\n';
-	}
-	else {
-		std::cout << "Loading " << path << '\n';
-	}
-
-	// Parse the glTF file and get the constructed asset
-	{
-		static constexpr auto supportedExtensions =
-			fastgltf::Extensions::KHR_mesh_quantization |
-			fastgltf::Extensions::KHR_texture_transform |
-			fastgltf::Extensions::KHR_materials_variants;
-
-		fastgltf::Parser parser(supportedExtensions);
-
-		constexpr auto gltfOptions =
-			fastgltf::Options::DontRequireValidAssetMember |
-			fastgltf::Options::AllowDouble |
-			fastgltf::Options::LoadExternalBuffers |
-			fastgltf::Options::LoadExternalImages |
-			fastgltf::Options::GenerateMeshIndices;
-
-		auto gltfFile = fastgltf::MappedGltfFile::FromPath(path);
-		if (!bool(gltfFile)) {
-			std::cerr << "Failed to open glTF file: " << fastgltf::getErrorMessage(gltfFile.error()) << '\n';
-			return false;
-		}
-
-		auto expectedAsset = parser.loadGltf(gltfFile.get(), path.parent_path(), gltfOptions);
-		if (expectedAsset.error() != fastgltf::Error::None) {
-			std::cerr << "Failed to load glTF: " << fastgltf::getErrorMessage(expectedAsset.error()) << '\n';
-			return false;
-		}
-
-		asset = std::move(expectedAsset.get());
-	}
-
-	return true;
-}
-
 void Application::loadModel()
 {
+	GLTFProcessor gltfProcessor;
+
 	std::string path = "assets/licensed/Sponza/Sponza.gltf";
 	std::string parentDirectory = "asset/licensed/Sponza/";
 	fastgltf::Asset asset;
-	if (!loadGltf(std::filesystem::path{ path }, asset))
+	if (!gltfProcessor.loadGLTF(std::filesystem::path{ path }, asset))
 	{
 		std::cerr << "There was an error in loading the GLTF model " << path << "\n";
 	}
 
-	GLTFProcessor gltfProcessor;
-	std::vector<TextureProcessRequest> textureProcessRequests = gltfProcessor.processImages(asset, parentDirectory);
+	// TODO: ADD DEFAULTS
 
-	TextureProcessor textureProcessor{ physicalDevice, device, queue, commandPool };
-	vulkanTextures = textureProcessor.processImages(textureProcessRequests);
+	ItemRegistry<ImageProcessRequest>& imageRegistry = registryCollection.imageRegistry;
+	std::unordered_map<uint32_t, uint32_t> imageProcessRequests;
+	for (uint32_t i = 0; i < asset.images.size(); ++i)
+	{
+		const fastgltf::Image& image = asset.images[i];
+		uint32_t slot = imageRegistry.add(gltfProcessor.processImage(image, asset, parentDirectory));
+		imageProcessRequests.insert({i, slot});
+	};
+	ImageProcessor imageProcessor{ physicalDevice, device, queue, commandPool };
+	vulkanCollection.vulkanImages.add(imageProcessor.processImages(imageRegistry.getItems())); // TODO: Fix the formats of each texture
+
+	ItemRegistry<SamplerProcessRequest>& samplerRegistry = registryCollection.samplerRegistry;
+	std::unordered_map<uint32_t, uint32_t> samplerProcessRequests;
+	for (uint32_t i = 0; i < asset.samplers.size(); ++i)
+	{
+		const fastgltf::Sampler& sampler = asset.samplers[i];
+		uint32_t slot = samplerRegistry.add(gltfProcessor.processSample(sampler));
+		samplerProcessRequests.insert({i, slot});
+	}
+	SamplerProcessor samplerProcessor{ physicalDevice, device };
+	vulkanCollection.vulkanSamplers.add(samplerProcessor.processSamplers(samplerRegistry.getItems()));
+
+	ItemRegistry<TextureProcessRequest>& textureRegistry = registryCollection.textureRegistry;
+	std::unordered_map<uint32_t, uint32_t> textureProcessRequests;
+	for (uint32_t i = 0; i < asset.textures.size(); ++i)
+	{
+		const fastgltf::Texture& texture = asset.textures[i];
+		TextureProcessRequest request = gltfProcessor.processTexture(texture);
+		if (request.imageIndex > 0)
+		{
+			request.imageIndex = imageProcessRequests[request.imageIndex - 1];
+		}
+		if (request.samplerIndex > 0)
+		{
+			request.samplerIndex = samplerProcessRequests[request.samplerIndex - 1];
+		}
+		uint32_t slot = textureRegistry.add(std::move(request));
+		textureProcessRequests.insert({i, slot});
+	}
+	
+	ItemRegistry<MaterialProcessRequest>& materialRegistry = registryCollection.materialRegistry;
+	std::unordered_map<uint32_t, uint32_t> materialProcessRequests;
+	for (uint32_t i = 0; i < asset.materials.size(); ++i)
+	{
+		const fastgltf::Material& material = asset.materials[i];
+		MaterialProcessRequest request = gltfProcessor.processMaterial(material);
+		if (request.baseColorTextureIndex > 0)
+		{
+			request.baseColorTextureIndex = textureProcessRequests[request.baseColorTextureIndex - 1];
+		}
+		if (request.normalTextureIndex > 0)
+		{
+			request.normalTextureIndex = textureProcessRequests[request.normalTextureIndex - 1];
+		}
+		if (request.metallicRoughnessTextureIndex > 0)
+		{
+			request.metallicRoughnessTextureIndex = textureProcessRequests[request.metallicRoughnessTextureIndex - 1];
+		}
+		uint32_t slot = materialRegistry.add(std::move(request));
+		materialProcessRequests.insert({i, slot});
+	}
 
 	textureSlots.clear();
-	textureSlots.reserve(vulkanTextures.size());
-	for (VulkanTexture& vulkanTexture : vulkanTextures)
+	textureSlots.reserve(vulkanImages.size());
+	for (VulkanImage& vulkanImage : vulkanImages)
 	{
-		uint32_t slot = bindlessRegistry.add(std::move(vulkanTexture), textureSampler);
+		uint32_t slot = bindlessRegistry.add(std::move(vulkanImage), textureSampler);
 		textureSlots.push_back(slot);
 	}
-	vulkanTextures.clear(); // All the VulkanTextures were moved, so no point in keeping the vector
+	vulkanImages.clear(); // All the VulkanTextures were moved, so no point in keeping the vector
 
 
 	vertices = {

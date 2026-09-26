@@ -32,7 +32,9 @@ add_executable (${PROJECT_NAME}
     src/Camera.cpp
     src/CameraController.cpp
     src/GLTFProcessor.cpp
+    src/ImageProcessor.cpp
     src/Main.cpp
+    src/SamplerProcessor.cpp
     src/TextureProcessor.cpp
     src/VulkanDispatch.cpp
     src/Window.cpp

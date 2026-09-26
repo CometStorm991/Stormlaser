@@ -27,8 +27,11 @@
 #include "BindlessRegistry.hpp"
 #include "CameraController.hpp"
 #include "GLTFProcessor.hpp"
-#include "TextureProcessor.hpp"
-#include "VulkanTexture.hpp"
+#include "ImageProcessor.hpp"
+#include "ItemRegistry.hpp"
+#include "SamplerProcessor.hpp"
+#include "VulkanItem.hpp"
+#include "Vertex.hpp"
 #include "Window.hpp"
 
 #ifdef NDEBUG
@@ -48,38 +51,7 @@ const std::vector<char const*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
-struct Vertex
-{
-	glm::vec3 pos;
-	glm::vec2 texCoord;
 
-
-	static vk::VertexInputBindingDescription getBindingDescription()
-	{
-		return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
-	}
-
-	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions()
-	{
-		return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, pos)},
-				 {.location = 1, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, texCoord) } } };
-	}
-
-	bool operator==(const Vertex& other) const
-	{
-		return pos == other.pos && texCoord == other.texCoord;
-	}
-};
-namespace std
-{
-	template<> struct hash<Vertex>
-	{
-		size_t operator()(Vertex const& vertex) const
-		{
-			return ((hash<glm::vec3>()(vertex.pos)) ^ (hash<glm::vec2>()(vertex.texCoord) << 1));
-		}
-	};
-}
 
 struct UniformBufferObject
 {
@@ -137,8 +109,11 @@ private:
 	vk::raii::ImageView    depthImageView = nullptr;
 	vk::Format depthFormat = vk::Format::eUndefined;
 
+	RegistryCollection registryCollection;
+	VulkanCollection vulkanCollection;
 	uint32_t maxTextures;
-	std::vector<VulkanTexture> vulkanTextures;
+	std::vector<VulkanImage> vulkanImages;
+	std::vector<VulkanSampler> vulkanSamplers;
 	std::vector<uint32_t> textureSlots;
 	BindlessRegistry bindlessRegistry;
 
@@ -223,7 +198,6 @@ private:
 	//void createTextureImageView();
 	void createTextureSampler();
 
-	bool loadGltf(std::filesystem::path path, fastgltf::Asset& asset);
 	void loadModel();
 
 	void createVertexBuffer();
