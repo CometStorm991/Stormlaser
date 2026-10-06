@@ -1,6 +1,7 @@
 struct VSInput
 {
     float3 inPosition;
+
     float2 inTexCoords;
 };
 
@@ -13,7 +14,18 @@ struct UniformBuffer {
 ConstantBuffer<UniformBuffer> ubo;
 */
 
-[[vk::binding(0, 0)]] Sampler2D textures[];
+struct Material
+{
+	float4 baseColorFactor;
+	uint32_t baseColorTextureIndex;
+	uint32_t normalTextureIndex;
+	float metallicFactor;
+	float roughnessFactor;
+	uint32_t metallicRoughnessTextureIndex;
+};
+
+[[vk::binding(0, 0)]] Material materials[];
+[[vk::binding(1, 0)]] Sampler2D textures[];
 
 struct VSOutput
 {

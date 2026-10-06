@@ -6,7 +6,8 @@
 #include <vulkan/vulkan_raii.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/hash.hpp>
+
+#include "Vertex.hpp"
 
 struct SamplerProcessRequest
 {
@@ -37,7 +38,10 @@ struct MaterialProcessRequest
 {
 	glm::vec4 baseColorFactor;
 	uint32_t baseColorTextureIndex;
+
 	uint32_t normalTextureIndex;
+	float normalScale;
+
 	float metallicFactor;
 	float roughnessFactor;
 	uint32_t metallicRoughnessTextureIndex;
@@ -46,13 +50,14 @@ struct MaterialProcessRequest
 struct Primitive
 {
 	uint32_t materialIndex;
-	std::vector<uint32_t> vertices; // Interleaved data
+	std::vector<Vertex> vertices; // Interleaved data
 	std::vector<uint32_t> indices;
 	vk::PrimitiveTopology topology;
+	bool hasNormals;
+	bool hasTangents;
 };
 
 struct MeshProcessRequest
 {
-
 	std::vector<Primitive> primitives;
 };

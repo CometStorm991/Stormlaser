@@ -158,6 +158,8 @@ MaterialProcessRequest GLTFProcessor::processMaterial(const fastgltf::Material& 
 
     request.normalTextureIndex = material.normalTexture.has_value() ?
         material.normalTexture.value().textureIndex + 1 : 0;
+    request.normalScale = material.normalTexture.has_value() ?
+        material.normalTexture.value().scale : 1.0f;
 
     request.metallicFactor = material.pbrData.metallicFactor;
     request.roughnessFactor = material.pbrData.roughnessFactor;
@@ -168,30 +170,159 @@ MaterialProcessRequest GLTFProcessor::processMaterial(const fastgltf::Material& 
 }
 
 // Adapted from fastgltf's gl_viewer.cpp
-MeshProcessRequest GLTFProcessor::processMesh(const fastgltf::Mesh& mesh)
+MeshProcessRequest GLTFProcessor::processMesh(const fastgltf::Mesh& mesh, const fastgltf::Asset& asset)
 {
-    MeshProcessRequest meshProcessRequest;
-    meshProcessRequest.primitives.resize(mesh.primitives.size());
+    MeshProcessRequest request;
+    request.primitives.resize(mesh.primitives.size());
     for (auto it = mesh.primitives.begin(); it != mesh.primitives.end(); ++it)
     {
+        auto index = std::distance(mesh.primitives.begin(), it);
+        assert(it->indicesAccessor.has_value()); // We specify GenerateMeshIndices, so we should always have indices
+        auto& primitive = request.primitives[index];
+        primitive.topology = toVkPrimitiveTopology(it->type);
+
+        // -------------------- Index --------------------
+        auto& indicesAccessor = asset.accessors[it->indicesAccessor.value()];
+        if (!indicesAccessor.bufferViewIndex.has_value())
+        {
+            std::cerr << "[GLTFProcessor] Indices accessor doesn't have a buffer view index" << std::endl;
+            continue;
+        }
+        primitive.indices.resize(indicesAccessor.count);
+        fastgltf::iterateAccessorWithIndex<std::uint32_t>(asset, indicesAccessor,
+            [&](std::uint32_t value, std::size_t index)
+            {
+                primitive.indices[index] = value;
+            });
+        
+        // -------------------- Position --------------------
         auto* positionIt = it->findAttribute("POSITION");
         assert(positionIt != it->attributes.end()); // A mesh primitive is required to hold the POSITION attribute.
-        assert(it->indicesAccessor.has_value()); // We specify GenerateMeshIndices, so we should always have indices
 
-        auto index = std::distance(mesh.primitives.begin(), it);
-        auto& primitive = meshProcessRequest.primitives[index];
-        primitive.topology = toVkPrimitiveTopology(it->type);
+        auto& positionAccessor = asset.accessors[positionIt->accessorIndex];
+        if (!positionAccessor.bufferViewIndex.has_value())
+        {
+            std::cerr << "[GLTFProcessor] Position accessor doesn't have a buffer view index" << std::endl;
+            continue;
+        }
+        primitive.vertices.resize(positionAccessor.count);
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, positionAccessor,
+            [&](fastgltf::math::fvec3 pos, std::size_t index)
+            {
+                Vertex& vertex = primitive.vertices[index];
+                vertex.position = glm::vec3{ pos.x(), pos.y(), pos.z() };
+                vertex.normal = glm::vec3{ 0.0f, 0.0f, 0.0f };
+                vertex.tangent = glm::vec3{ 0.0f, 0.0f, 0.0f };
+                for (glm::vec2& texcoord : vertex.texcoords)
+                {
+                    texcoord = glm::vec2{ 0.0f, 0.0f };
+                }
+                vertex.color0 = glm::vec4{ 1.0f, 1.0f, 1.0f, 1.0f };
+            });
+
+        // -------------------- Normals --------------------
+        auto* normalIt = it->findAttribute("NORMAL");
+        if (normalIt == it->attributes.end())
+        {
+            std::cerr << "[GLTFProcessor] No normal attribute was found in GLTF model" << std::endl;
+            primitive.hasNormals = false;
+        } 
+        else
+        {
+            auto& normalAccessor = asset.accessors[normalIt->accessorIndex];
+            if (!normalAccessor.bufferViewIndex.has_value())
+            {
+                std::cerr << "[GLTFProcessor] Normal accessor doesn't have a buffer view index" << std::endl;
+                primitive.hasNormals = false;
+            }
+            else
+            {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, normalAccessor,
+                    [&](fastgltf::math::fvec3 norm, std::size_t index)
+                    {
+                        Vertex& vertex = primitive.vertices[index];
+                        vertex.normal = glm::vec3{ norm.x(), norm.y(), norm.z() };
+                    });
+                primitive.hasNormals = true;
+            }
+        }
+
+        // -------------------- Tangents --------------------
+        auto* tangentIt = it->findAttribute("TANGENT");
+        if (tangentIt == it->attributes.end())
+        {
+            std::cerr << "[GLTFProcessor] No tangent attribute was found in GLTF model" << std::endl;
+            primitive.hasTangents = false;
+        }
+        else
+        {
+            auto& tangentAccessor = asset.accessors[tangentIt->accessorIndex];
+            if (!tangentAccessor.bufferViewIndex.has_value())
+            {
+                std::cerr << "[GLTFProcessor] Tangent accessor doesn't have a buffer view index" << std::endl;
+                primitive.hasTangents = false;
+            }
+            else
+            {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, tangentAccessor,
+                    [&](fastgltf::math::fvec3 tang, std::size_t index)
+                    {
+                        Vertex& vertex = primitive.vertices[index];
+                        vertex.tangent = glm::vec3{ tang.x(), tang.y(), tang.z() };
+                    });
+                primitive.hasTangents = true;
+            }
+        }
+
+        // -------------------- Textures --------------------
+        // TEXCOORD_0 must be valid since it's the fallback
+        std::size_t baseColorTexcoordIndex = 0, normalTexcoordIndex = 0, metallicRoughnessTexcoordIndex = 0;
 
         if (it->materialIndex.has_value())
         {
             primitive.materialIndex = it->materialIndex.value() + 1; // 1-indexed
-            
+            auto& material = asset.materials[it->materialIndex.value()];
+
+            // It's okay if any of these has_value()s fail, since the default material can be sampled with anything
+            if (material.pbrData.baseColorTexture.has_value())
+            {
+                baseColorTexcoordIndex = getTexcoordIndex(material.pbrData.baseColorTexture.value(), material, asset);
+            }
+            if (material.normalTexture.has_value())
+            {
+                normalTexcoordIndex = getTexcoordIndex(material.normalTexture.value(), material, asset);
+            }
+            if (material.pbrData.metallicRoughnessTexture.has_value())
+            {
+                metallicRoughnessTexcoordIndex = getTexcoordIndex(material.pbrData.metallicRoughnessTexture.value(), material, asset);
+            }
         }
         else
         {
             primitive.materialIndex = 0;
         }
+
+        writeTexcoordData(baseColorTexcoordIndex, it, asset, primitive.vertices);
+        writeTexcoordData(normalTexcoordIndex, it, asset, primitive.vertices);
+        writeTexcoordData(metallicRoughnessTexcoordIndex, it, asset, primitive.vertices);
+
+        // -------------------- Colors --------------------
+        // Only supporting one color for now
+        if (auto* colorIt = it->findAttribute("COLOR_0"); colorIt != it->attributes.end())
+        {
+            if (auto& colorAccessor = asset.accessors[colorIt->accessorIndex]; colorAccessor.bufferViewIndex.has_value())
+            {
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(asset, colorAccessor,
+                    [&](fastgltf::math::fvec4 color, std::size_t index)
+                    {
+                        Vertex& vertex = primitive.vertices[index];
+                        vertex.color0 = glm::vec4{ color.x(), color.y(), color.z(), color.w()};
+                    });
+            }
+        }
     }
+
+    return request;
 }
 
 vk::PrimitiveTopology GLTFProcessor::toVkPrimitiveTopology(fastgltf::PrimitiveType type)
@@ -200,5 +331,54 @@ vk::PrimitiveTopology GLTFProcessor::toVkPrimitiveTopology(fastgltf::PrimitiveTy
     {
     case fastgltf::PrimitiveType::Triangles:
         return vk::PrimitiveTopology::eTriangleList;
+    }
+}
+
+std::size_t GLTFProcessor::getTexcoordIndex(const fastgltf::TextureInfo& textureInfo, const fastgltf::Material& material, const fastgltf::Asset& asset)
+{
+    auto& texture = asset.textures[textureInfo.textureIndex];
+    if (texture.imageIndex.has_value())
+    {
+        if (textureInfo.transform && textureInfo.transform->texCoordIndex.has_value())
+        {
+            return textureInfo.transform->texCoordIndex.value();
+        }
+        else
+        {
+            return material.pbrData.baseColorTexture->texCoordIndex;
+        }
+    }
+    else
+    {
+        std::cerr << "[GLTFProcessor] Texture doesn't have a value for imageIndex" << std::endl;
+    }
+}
+
+void GLTFProcessor::writeTexcoordData(std::size_t texcoordIndex, PrimitiveIterator it, const fastgltf::Asset& asset, std::vector<Vertex>& vertices)
+{
+
+    if (texcoordIndex >= Vertex::texcoordCount)
+    {
+        writeTexcoordData(0, it, asset, vertices);
+    }
+    auto texcoordAttribute = std::string("TEXCOORD_") + std::to_string(texcoordIndex);
+    if (const auto* texcoord = it->findAttribute(texcoordAttribute); texcoord != it->attributes.end())
+    {
+        auto& texcoordAccessor = asset.accessors[texcoord->accessorIndex];
+        if (!texcoordAccessor.bufferViewIndex.has_value())
+        {
+            writeTexcoordData(0, it, asset, vertices);
+        }
+
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(asset, texcoordAccessor,
+            [&](fastgltf::math::fvec2 texcoordData, std::size_t index)
+            {
+                vertices[index].texcoords[texcoordIndex].x = texcoordData.x();
+                vertices[index].texcoords[texcoordIndex].y = texcoordData.y();
+            });
+    }
+    else
+    {
+        writeTexcoordData(0, it, asset, vertices);
     }
 }

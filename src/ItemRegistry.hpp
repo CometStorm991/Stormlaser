@@ -11,8 +11,8 @@ class ItemRegistry
 public:
 	uint32_t add(T&& item);
 	std::vector<uint32_t> add(std::vector<T>&& items);
-	const T& get(uint32_t slot);
-	const std::vector<T>& getItems();
+	const T& get(uint32_t slot) const;
+	const std::vector<T>& getItems() const;
 private:
 	uint32_t next = 0;
 	std::vector<T> items;
@@ -38,13 +38,13 @@ std::vector<uint32_t> ItemRegistry<T>::add(std::vector<T>&& items)
 }
 
 template<typename T>
-const T& ItemRegistry<T>::get(uint32_t slot)
+const T& ItemRegistry<T>::get(uint32_t slot) const
 {
 	return items[slot];
 }
 
 template<typename T>
-const std::vector<T>& getItems()
+const std::vector<T>& ItemRegistry<T>::getItems() const
 {
 	return items;
 }
@@ -55,4 +55,5 @@ struct RegistryCollection
 	ItemRegistry<SamplerProcessRequest> samplerRegistry;
 	ItemRegistry<TextureProcessRequest> textureRegistry;
 	ItemRegistry<MaterialProcessRequest> materialRegistry;
+	ItemRegistry<MeshProcessRequest> meshRegistry;
 };

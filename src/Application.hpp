@@ -21,7 +21,6 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/hash.hpp>
 #include <stb_image.h>
 
 #include "BindlessRegistry.hpp"
@@ -29,7 +28,10 @@
 #include "GLTFProcessor.hpp"
 #include "ImageProcessor.hpp"
 #include "ItemRegistry.hpp"
+#include "MaterialProcessor.hpp"
+#include "MeshProcessor.hpp"
 #include "SamplerProcessor.hpp"
+#include "TextureProcessor.hpp"
 #include "VulkanItem.hpp"
 #include "Vertex.hpp"
 #include "Window.hpp"
@@ -51,7 +53,12 @@ const std::vector<char const*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 };
 
-
+struct PushData
+{
+	int materialIndex;
+	bool hasNormals;
+	bool hasTangents;
+};
 
 struct UniformBufferObject
 {
@@ -112,20 +119,6 @@ private:
 	RegistryCollection registryCollection;
 	VulkanCollection vulkanCollection;
 	uint32_t maxTextures;
-	std::vector<VulkanImage> vulkanImages;
-	std::vector<VulkanSampler> vulkanSamplers;
-	std::vector<uint32_t> textureSlots;
-	BindlessRegistry bindlessRegistry;
-
-	vk::raii::ImageView textureImageView = nullptr;
-	vk::raii::Sampler textureSampler = nullptr;
-
-	std::vector<Vertex> vertices;
-	vk::raii::Buffer vertexBuffer = nullptr;
-	vk::raii::DeviceMemory vertexBufferMemory = nullptr;
-	std::vector<uint32_t> indices;
-	vk::raii::Buffer       indexBuffer = nullptr;
-	vk::raii::DeviceMemory indexBufferMemory = nullptr;
 
 	std::vector<vk::raii::Buffer>       uniformBuffers;
 	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
@@ -189,19 +182,13 @@ private:
 	vk::Format findDepthFormat();
 	vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
 
-	//void createTextureImage();
 	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
 		uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 	void transitionImageLayout(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
 	void copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
 
-	//void createTextureImageView();
-	void createTextureSampler();
-
 	void loadModel();
 
-	void createVertexBuffer();
-	void createIndexBuffer();
 	void createUniformBuffers();
 	std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties);
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size);

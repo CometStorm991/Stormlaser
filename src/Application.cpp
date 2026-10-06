@@ -14,12 +14,7 @@ void Application::initVulkan()
 	createGraphicsPipeline();
 	createCommandPool();
 	createDepthResources();
-	//createTextureImage();
-	//createTextureImageView();
-	createTextureSampler();
 	loadModel();
-	createVertexBuffer();
-	createIndexBuffer();
 	createUniformBuffers();
 	createDescriptorPool();
 	createDescriptorSets();
@@ -375,8 +370,11 @@ vk::raii::ImageView Application::createImageView(vk::Image const& image, vk::For
 void Application::createDescriptorSetLayout()
 {
 	// -------------------- Bindless textures --------------------
-	std::array<vk::DescriptorSetLayoutBinding, 1> bindlessBindings{
-	{{.binding = 0, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxTextures, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
+	std::array<vk::DescriptorSetLayoutBinding, 2> bindlessBindings{
+	{
+		{.binding = 0, .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+		{.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxTextures, .stageFlags = vk::ShaderStageFlagBits::eFragment}
+	} };
 
 	vk::DescriptorBindingFlags bindlessBindingFlags =
 		vk::DescriptorBindingFlagBits::ePartiallyBound |
@@ -456,7 +454,7 @@ void Application::createGraphicsPipeline()
 	vk::PushConstantRange pushRange{
 		.stageFlags = vk::ShaderStageFlagBits::eFragment,
 		.offset = 0,
-		.size = sizeof(uint32_t)
+		.size = sizeof(PushData)
 	};
 
 	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
@@ -535,42 +533,6 @@ vk::Format Application::findSupportedFormat(const std::vector<vk::Format>& candi
 	}
 }
 
-/*
-void Application::createTextureImage()
-{
-	int            texWidth, texHeight, texChannels;
-	stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-	vk::DeviceSize imageSize = texWidth * texHeight * 4;
-
-	if (!pixels)
-	{
-		throw std::runtime_error("failed to load texture image!");
-	}
-
-	auto [stagingBuffer, stagingBufferMemory] =
-		createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	void* data = stagingBufferMemory.mapMemory(0, imageSize);
-	memcpy(data, pixels, imageSize);
-	stagingBufferMemory.unmapMemory();
-
-	stbi_image_free(pixels);
-
-	std::tie(textureImage, textureImageMemory) = createImage(texWidth,
-		texHeight,
-		vk::Format::eR8G8B8A8Srgb,
-		vk::ImageTiling::eOptimal,
-		vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-		vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-	transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-	copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-	transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-	endSingleTimeCommands(std::move(commandBuffer));
-}
-*/
-
 std::pair<vk::raii::Image, vk::raii::DeviceMemory> Application::createImage(
 	uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties)
 {
@@ -643,33 +605,6 @@ void Application::copyBufferToImage(vk::raii::CommandBuffer& commandBuffer, cons
 	commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
 }
 
-/*
-void Application::createTextureImageView()
-{
-	textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
-}
-*/
-
-void Application::createTextureSampler()
-{
-	vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
-	vk::SamplerCreateInfo        samplerInfo{ .magFilter = vk::Filter::eLinear,
-											 .minFilter = vk::Filter::eLinear,
-											 .mipmapMode = vk::SamplerMipmapMode::eLinear,
-											 .addressModeU = vk::SamplerAddressMode::eRepeat,
-											 .addressModeV = vk::SamplerAddressMode::eRepeat,
-											 .addressModeW = vk::SamplerAddressMode::eRepeat,
-											 .mipLodBias = 0.0f,
-											 .anisotropyEnable = vk::True,
-											 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-											 .compareEnable = vk::False,
-											 .compareOp = vk::CompareOp::eAlways,
-											 .minLod = 0.0f,
-											 .maxLod = 0.0f };
-
-	textureSampler = vk::raii::Sampler(device, samplerInfo);
-}
-
 void Application::loadModel()
 {
 	GLTFProcessor gltfProcessor;
@@ -683,6 +618,7 @@ void Application::loadModel()
 	}
 
 	// TODO: ADD DEFAULTS
+	// Note: The processor's process functions are written to only work with the global set of all images, not just a subset
 
 	ItemRegistry<ImageProcessRequest>& imageRegistry = registryCollection.imageRegistry;
 	std::unordered_map<uint32_t, uint32_t> imageProcessRequests;
@@ -723,6 +659,8 @@ void Application::loadModel()
 		uint32_t slot = textureRegistry.add(std::move(request));
 		textureProcessRequests.insert({i, slot});
 	}
+	TextureProcessor textureProcessor{ vulkanCollection };
+	vulkanCollection.vulkanTextures.add(textureProcessor.processTextures(textureRegistry.getItems()));
 	
 	ItemRegistry<MaterialProcessRequest>& materialRegistry = registryCollection.materialRegistry;
 	std::unordered_map<uint32_t, uint32_t> materialProcessRequests;
@@ -745,67 +683,27 @@ void Application::loadModel()
 		uint32_t slot = materialRegistry.add(std::move(request));
 		materialProcessRequests.insert({i, slot});
 	}
+	MaterialProcessor materialProcessor{ physicalDevice, device, queue, commandPool };
+	vulkanCollection.vulkanMaterials = materialProcessor.processMaterials(materialRegistry.getItems());
 
-	textureSlots.clear();
-	textureSlots.reserve(vulkanImages.size());
-	for (VulkanImage& vulkanImage : vulkanImages)
+	ItemRegistry<MeshProcessRequest>& meshRegistry = registryCollection.meshRegistry;
+	std::unordered_map<uint32_t, uint32_t> meshProcessRequests;
+	for (uint32_t i = 0; i < asset.meshes.size(); ++i)
 	{
-		uint32_t slot = bindlessRegistry.add(std::move(vulkanImage), textureSampler);
-		textureSlots.push_back(slot);
+		const fastgltf::Mesh& mesh = asset.meshes[i];
+		MeshProcessRequest request = gltfProcessor.processMesh(mesh, asset);
+		for (Primitive& primitive : request.primitives)
+		{
+			if (primitive.materialIndex > 0)
+			{
+				primitive.materialIndex = materialProcessRequests[primitive.materialIndex - 1];
+			}
+		}
+		uint32_t slot = meshRegistry.add(std::move(request));
+		meshProcessRequests.insert({i, slot});
 	}
-	vulkanImages.clear(); // All the VulkanTextures were moved, so no point in keeping the vector
-
-
-	vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}},
-		{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f}},
-		{{0.5f, 0.5f, 0.0f}, {0.0f, 1.0f}},
-		{{0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}},
-
-		/*
-		{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-		{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-		{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-		{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}}
-		*/
-	};
-
-	indices = {
-		0, 1, 2, 2, 3, 0,
-		//4, 5, 6, 6, 7, 4
-	};
-}
-
-void Application::createVertexBuffer()
-{
-	vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-	auto [stagingBuffer, stagingBufferMemory] = createBuffer(
-		bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	void* dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
-	memcpy(dataStaging, vertices.data(), bufferSize);
-	stagingBufferMemory.unmapMemory();
-
-	std::tie(vertexBuffer, vertexBufferMemory) = createBuffer(
-		bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-}
-
-void Application::createIndexBuffer()
-{
-	vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-	auto [stagingBuffer, stagingBufferMemory] = createBuffer(
-		bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-	void* dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
-	memcpy(dataStaging, indices.data(), bufferSize);
-	stagingBufferMemory.unmapMemory();
-
-	std::tie(indexBuffer, indexBufferMemory) = createBuffer(
-		bufferSize, vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
-
-	copyBuffer(stagingBuffer, indexBuffer, bufferSize);
+	MeshProcessor meshProcessor{ physicalDevice, device, queue, commandPool };
+	vulkanCollection.vulkanMeshes = meshProcessor.processMeshes(meshRegistry.getItems());
 }
 
 void Application::createUniformBuffers()
@@ -849,7 +747,7 @@ void Application::createDescriptorSets()
 {
 	// -------------------- Bindless Textures --------------------
 	{
-		std::array<uint32_t, 1> descriptorCounts = { maxTextures };
+		std::array<uint32_t, 2> descriptorCounts = { 1, maxTextures };
 		vk::DescriptorSetVariableDescriptorCountAllocateInfo varCount{
 			.descriptorSetCount = static_cast<uint32_t>(descriptorCounts.size()),
 			.pDescriptorCounts = descriptorCounts.data() };
@@ -862,7 +760,32 @@ void Application::createDescriptorSets()
 			.pSetLayouts = layouts.data() };
 		bindlessDescriptorSets = device.allocateDescriptorSets(allocInfo);
 
-		bindlessRegistry.flush(device, bindlessDescriptorSets[0]);
+		std::vector<VulkanTexture> vulkanTextures = vulkanCollection.vulkanTextures.getItems();
+		std::vector<vk::WriteDescriptorSet> writes;
+		vk::DescriptorBufferInfo bufferInfo{ .buffer = vulkanCollection.vulkanMaterials.materialBuffer, .offset = 0, .range = sizeof(MaterialProcessRequest)};
+		writes.push_back(vk::WriteDescriptorSet{
+			.dstSet = bindlessDescriptorSets[0],
+			.dstBinding = 0,
+			.dstArrayElement = 0,
+			.descriptorCount = 1,
+			.descriptorType = vk::DescriptorType::eStorageBuffer,
+			});
+
+		for (uint32_t i = 0; i < vulkanTextures.size(); ++i)
+		{
+			const VulkanTexture& vulkanTexture = vulkanTextures[i];
+			const vk::DescriptorImageInfo& imageInfo = vulkanTexture.imageInfo;
+			writes.push_back(vk::WriteDescriptorSet{
+				.dstSet = bindlessDescriptorSets[0],
+				.dstBinding = 1,
+				.dstArrayElement = i,
+				.descriptorCount = 1,
+				.descriptorType = vk::DescriptorType::eCombinedImageSampler,
+				.pImageInfo = &imageInfo
+				});
+		}
+
+		device.updateDescriptorSets(writes, {});
 	}
 
 	// -------------------- Per Frame --------------------
@@ -1018,8 +941,8 @@ void Application::recordCommandBuffer(uint32_t imageIndex)
 	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 	commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-	commandBuffer.bindVertexBuffers(0, *vertexBuffer, { 0 });
-	commandBuffer.bindIndexBuffer(*indexBuffer, 0, vk::IndexTypeValue<decltype(indices)::value_type>::value);
+	commandBuffer.bindVertexBuffers(0, *vulkanCollection.vulkanMeshes.vertexBuffer, { 0 });
+	commandBuffer.bindIndexBuffer(*vulkanCollection.vulkanMeshes.indexBuffer, 0, vk::IndexTypeValue<uint32_t>::value);
 
 	commandBuffers[frameIndex].bindDescriptorSets(
 		vk::PipelineBindPoint::eGraphics,
@@ -1027,7 +950,17 @@ void Application::recordCommandBuffer(uint32_t imageIndex)
 		0,
 		{ *bindlessDescriptorSets[0], *perFrameDescriptorSets[frameIndex] },
 		nullptr);
-	commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+	for (const VulkanMeshRange& range : vulkanCollection.vulkanMeshes.meshRanges)
+	{
+		PushData pushData = {
+			.materialIndex = static_cast<int>(range.materialIndex),
+			.hasNormals = range.hasNormals,
+			.hasTangents = range.hasTangents
+		};
+		commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushData), &pushData);
+		commandBuffer.drawIndexed(range.indexCount, 1, range.firstIndex, range.vertexOffset, 0);
+	}
 
 	commandBuffer.endRendering();
 

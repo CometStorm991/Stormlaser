@@ -2,7 +2,7 @@
 * text=auto eol=lf
 
 # --- Vulkan & Shader Data ---
-*.spv filter=lfs diff=lfs merge=lfs -text # gitignored, but just in case
+*.spv filter=lfs diff=lfs merge=lfs -text
 *.bin filter=lfs diff=lfs merge=lfs -text
 *.cache filter=lfs diff=lfs merge=lfs -text
 

@@ -28,12 +28,15 @@ target_compile_definitions(Stormlaser_VulkanHppConfig INTERFACE
 
 add_executable (${PROJECT_NAME} 
     src/Application.cpp
+    src/BufferProcessor.cpp
     src/BindlessRegistry.cpp
     src/Camera.cpp
     src/CameraController.cpp
     src/GLTFProcessor.cpp
     src/ImageProcessor.cpp
     src/Main.cpp
+    src/MaterialProcessor.cpp
+    src/MeshProcessor.cpp
     src/SamplerProcessor.cpp
     src/TextureProcessor.cpp
     src/VulkanDispatch.cpp
