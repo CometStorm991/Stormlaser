@@ -7,7 +7,7 @@ VulkanMaterials MaterialProcessor::processMaterials(const std::vector<MaterialPr
 {
 	// Using MaterialProcessRequest directly as Material struct for now
 
-	vk::DeviceSize bufferSize = sizeof(materialProcessRequests[0]) * materialProcessRequests.size();
+	vk::DeviceSize bufferSize = sizeof(MaterialProcessRequest) * materialProcessRequests.size();
 	auto [stagingBuffer, stagingBufferMemory] = bufferProcessor.createBuffer(
 		bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 
@@ -16,12 +16,11 @@ VulkanMaterials MaterialProcessor::processMaterials(const std::vector<MaterialPr
 	stagingBufferMemory.unmapMemory();
 
 	auto [materialBuffer, materialBufferMemory] = bufferProcessor.createBuffer(
-		bufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal); // TODO: Change this
-
+		bufferSize, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal);
 	bufferProcessor.copyBuffer(stagingBuffer, materialBuffer, bufferSize);
 
 	return VulkanMaterials{
-		std::move(materialBuffer), std::move(materialBufferMemory)
+		std::move(materialBuffer), std::move(materialBufferMemory), bufferSize
 	};
 }
 

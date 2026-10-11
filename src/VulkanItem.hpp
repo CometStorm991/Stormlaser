@@ -29,6 +29,7 @@ struct VulkanMaterials
 {
 	vk::raii::Buffer materialBuffer = nullptr;
 	vk::raii::DeviceMemory materialMemory = nullptr;
+	vk::DeviceSize bufferSize;
 };
 
 struct VulkanMeshRange
@@ -37,7 +38,10 @@ struct VulkanMeshRange
 	uint32_t indexCount;
 	int32_t vertexOffset;
 
-	uint32_t materialIndex;
+	uint32_t materialIndex; // Kind of a hack, but materials and normals/tangents really do vary by primitive, and each range maps to a primitive
+	uint32_t baseColorTexcoordIndex;
+	uint32_t normalTexcoordIndex;
+	uint32_t metallicRoughnessTexcoordIndex;
 	bool hasNormals;
 	bool hasTangents;
 };

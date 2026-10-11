@@ -36,7 +36,7 @@ struct TextureProcessRequest
 
 struct MaterialProcessRequest
 {
-	glm::vec4 baseColorFactor;
+	alignas(16) glm::vec4 baseColorFactor;
 	uint32_t baseColorTextureIndex;
 
 	uint32_t normalTextureIndex;
@@ -52,6 +52,9 @@ struct Primitive
 	uint32_t materialIndex;
 	std::vector<Vertex> vertices; // Interleaved data
 	std::vector<uint32_t> indices;
+	uint32_t baseColorTexcoordIndex;
+	uint32_t normalTexcoordIndex;
+	uint32_t metallicRoughnessTexcoordIndex;
 	vk::PrimitiveTopology topology;
 	bool hasNormals;
 	bool hasTangents;

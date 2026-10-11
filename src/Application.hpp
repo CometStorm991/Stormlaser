@@ -56,8 +56,13 @@ const std::vector<char const*> validationLayers = {
 struct PushData
 {
 	int materialIndex;
+	uint32_t baseColorTexcoordIndex;
+	uint32_t normalTexcoordIndex;
+	uint32_t metallicRoughnessTexcoordIndex;
 	bool hasNormals;
 	bool hasTangents;
+    uint16_t pad = 0;
+    uint32_t morepad = 0;
 };
 
 struct UniformBufferObject

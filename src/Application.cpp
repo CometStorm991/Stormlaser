@@ -381,8 +381,14 @@ void Application::createDescriptorSetLayout()
 		vk::DescriptorBindingFlagBits::eUpdateAfterBind |
 		vk::DescriptorBindingFlagBits::eUpdateUnusedWhilePending |
 		vk::DescriptorBindingFlagBits::eVariableDescriptorCount; // must be the last binding
+	std::array<vk::DescriptorBindingFlags, 2> bindingFlags{
+		vk::DescriptorBindingFlags{},
+		bindlessBindingFlags
+	};
+
 	vk::DescriptorSetLayoutBindingFlagsCreateInfo flagsInfo{};
-	flagsInfo.setBindingFlags(bindlessBindingFlags);
+	flagsInfo.setBindingFlags(bindingFlags);
+	flagsInfo.bindingCount = static_cast<uint32_t>(bindlessBindings.size());
 
 	vk::DescriptorSetLayoutCreateInfo bindlessLayoutInfo{
 		.pNext = &flagsInfo,
@@ -452,7 +458,7 @@ void Application::createGraphicsPipeline()
 
 	std::array<vk::DescriptorSetLayout, 2> layouts = { *bindlessDescriptorSetLayout, *perFrameDescriptorSetLayout };
 	vk::PushConstantRange pushRange{
-		.stageFlags = vk::ShaderStageFlagBits::eFragment,
+		.stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
 		.offset = 0,
 		.size = sizeof(PushData)
 	};
@@ -617,11 +623,50 @@ void Application::loadModel()
 		std::cerr << "There was an error in loading the GLTF model " << path << "\n";
 	}
 
-	// TODO: ADD DEFAULTS
-	// Note: The processor's process functions are written to only work with the global set of all images, not just a subset
 
+	// TODO: ADD DEFAULTS
 	ItemRegistry<ImageProcessRequest>& imageRegistry = registryCollection.imageRegistry;
 	std::unordered_map<uint32_t, uint32_t> imageProcessRequests;
+	std::array<unsigned char, 4> defaultImageData = { 255, 255, 255, 255 }; // Image will already be in GPU memory when this deallocates, so it's fine for now
+	{
+		uint32_t slot = imageRegistry.add(ImageProcessRequest{
+			.pixelData = defaultImageData.data(), .width = 1, .height = 1, .nrChannels = 4, .format = vk::Format::eR8G8B8A8Srgb, .generateMipmaps = false });
+		//imageProcessRequests.insert({ 0, slot });
+	}
+
+	ItemRegistry<SamplerProcessRequest>& samplerRegistry = registryCollection.samplerRegistry;
+	std::unordered_map<uint32_t, uint32_t> samplerProcessRequests;
+	{
+		uint32_t slot = samplerRegistry.add(SamplerProcessRequest{
+			.magFilter = vk::Filter::eLinear, .minFilter = vk::Filter::eLinear, .mipmapMode = vk::SamplerMipmapMode::eLinear,
+			.wrapU = vk::SamplerAddressMode::eRepeat, .wrapV = vk::SamplerAddressMode::eRepeat });
+		//samplerProcessRequests.insert({ 0, slot });
+	}
+
+	ItemRegistry<TextureProcessRequest>& textureRegistry = registryCollection.textureRegistry;
+	std::unordered_map<uint32_t, uint32_t> textureProcessRequests;
+	{
+		uint32_t slot = textureRegistry.add(TextureProcessRequest{
+			.samplerIndex = 0, .imageIndex = 0 });
+		//textureProcessRequests.insert({ 0, slot });
+	}
+
+	ItemRegistry<MaterialProcessRequest>& materialRegistry = registryCollection.materialRegistry;
+	std::unordered_map<uint32_t, uint32_t> materialProcessRequests;
+	{
+		uint32_t slot = materialRegistry.add(MaterialProcessRequest{
+			.baseColorFactor = glm::vec4{1.0f, 1.0f, 1.0f, 1.0f},
+			.baseColorTextureIndex = 0,
+			.normalTextureIndex = 0,
+			.normalScale = 1.0f,
+			.metallicFactor = 0.0f,
+			.roughnessFactor = 1.0f,
+			.metallicRoughnessTextureIndex = 0});
+		//materialProcessRequests.insert({0, slot});
+	}
+
+	// Note: The processor's process functions are written to only work with the global set of all images, not just a subset
+
 	for (uint32_t i = 0; i < asset.images.size(); ++i)
 	{
 		const fastgltf::Image& image = asset.images[i];
@@ -631,8 +676,6 @@ void Application::loadModel()
 	ImageProcessor imageProcessor{ physicalDevice, device, queue, commandPool };
 	vulkanCollection.vulkanImages.add(imageProcessor.processImages(imageRegistry.getItems())); // TODO: Fix the formats of each texture
 
-	ItemRegistry<SamplerProcessRequest>& samplerRegistry = registryCollection.samplerRegistry;
-	std::unordered_map<uint32_t, uint32_t> samplerProcessRequests;
 	for (uint32_t i = 0; i < asset.samplers.size(); ++i)
 	{
 		const fastgltf::Sampler& sampler = asset.samplers[i];
@@ -642,8 +685,6 @@ void Application::loadModel()
 	SamplerProcessor samplerProcessor{ physicalDevice, device };
 	vulkanCollection.vulkanSamplers.add(samplerProcessor.processSamplers(samplerRegistry.getItems()));
 
-	ItemRegistry<TextureProcessRequest>& textureRegistry = registryCollection.textureRegistry;
-	std::unordered_map<uint32_t, uint32_t> textureProcessRequests;
 	for (uint32_t i = 0; i < asset.textures.size(); ++i)
 	{
 		const fastgltf::Texture& texture = asset.textures[i];
@@ -662,8 +703,6 @@ void Application::loadModel()
 	TextureProcessor textureProcessor{ vulkanCollection };
 	vulkanCollection.vulkanTextures.add(textureProcessor.processTextures(textureRegistry.getItems()));
 	
-	ItemRegistry<MaterialProcessRequest>& materialRegistry = registryCollection.materialRegistry;
-	std::unordered_map<uint32_t, uint32_t> materialProcessRequests;
 	for (uint32_t i = 0; i < asset.materials.size(); ++i)
 	{
 		const fastgltf::Material& material = asset.materials[i];
@@ -722,9 +761,13 @@ void Application::createUniformBuffers()
 void Application::createDescriptorPool()
 {
 	// -------------------- Bindless Textures --------------------
-	std::array<vk::DescriptorPoolSize, 1> poolSize{
-		{{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxTextures}} };
-	vk::DescriptorPoolCreateInfo          poolInfo{
+	std::array<vk::DescriptorPoolSize, 2> poolSize{
+		{
+			{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1 },
+			{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxTextures}
+		}
+	};
+	vk::DescriptorPoolCreateInfo poolInfo{
 		.flags = vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind | vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		.maxSets = MAX_FRAMES_IN_FLIGHT,
 		.poolSizeCount = static_cast<uint32_t>(poolSize.size()),
@@ -747,7 +790,7 @@ void Application::createDescriptorSets()
 {
 	// -------------------- Bindless Textures --------------------
 	{
-		std::array<uint32_t, 2> descriptorCounts = { 1, maxTextures };
+		std::array<uint32_t, 1> descriptorCounts = { maxTextures }; // Only for variable # of bindings
 		vk::DescriptorSetVariableDescriptorCountAllocateInfo varCount{
 			.descriptorSetCount = static_cast<uint32_t>(descriptorCounts.size()),
 			.pDescriptorCounts = descriptorCounts.data() };
@@ -762,13 +805,16 @@ void Application::createDescriptorSets()
 
 		std::vector<VulkanTexture> vulkanTextures = vulkanCollection.vulkanTextures.getItems();
 		std::vector<vk::WriteDescriptorSet> writes;
-		vk::DescriptorBufferInfo bufferInfo{ .buffer = vulkanCollection.vulkanMaterials.materialBuffer, .offset = 0, .range = sizeof(MaterialProcessRequest)};
+		vk::DescriptorBufferInfo bufferInfo{
+			.buffer = *vulkanCollection.vulkanMaterials.materialBuffer, .offset = 0,
+			.range = vk::WholeSize };
 		writes.push_back(vk::WriteDescriptorSet{
 			.dstSet = bindlessDescriptorSets[0],
 			.dstBinding = 0,
 			.dstArrayElement = 0,
 			.descriptorCount = 1,
 			.descriptorType = vk::DescriptorType::eStorageBuffer,
+			.pBufferInfo = &bufferInfo
 			});
 
 		for (uint32_t i = 0; i < vulkanTextures.size(); ++i)
@@ -955,10 +1001,13 @@ void Application::recordCommandBuffer(uint32_t imageIndex)
 	{
 		PushData pushData = {
 			.materialIndex = static_cast<int>(range.materialIndex),
+			.baseColorTexcoordIndex = range.baseColorTexcoordIndex,
+			.normalTexcoordIndex = range.normalTexcoordIndex,
+			.metallicRoughnessTexcoordIndex = range.metallicRoughnessTexcoordIndex,
 			.hasNormals = range.hasNormals,
 			.hasTangents = range.hasTangents
 		};
-		commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushData), &pushData);
+		commandBuffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, sizeof(PushData), &pushData);
 		commandBuffer.drawIndexed(range.indexCount, 1, range.firstIndex, range.vertexOffset, 0);
 	}
 

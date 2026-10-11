@@ -212,7 +212,7 @@ MeshProcessRequest GLTFProcessor::processMesh(const fastgltf::Mesh& mesh, const 
                 Vertex& vertex = primitive.vertices[index];
                 vertex.position = glm::vec3{ pos.x(), pos.y(), pos.z() };
                 vertex.normal = glm::vec3{ 0.0f, 0.0f, 0.0f };
-                vertex.tangent = glm::vec3{ 0.0f, 0.0f, 0.0f };
+                vertex.tangent = glm::vec4{ 0.0f, 0.0f, 0.0f, 1.0f };
                 for (glm::vec2& texcoord : vertex.texcoords)
                 {
                     texcoord = glm::vec2{ 0.0f, 0.0f };
@@ -264,11 +264,11 @@ MeshProcessRequest GLTFProcessor::processMesh(const fastgltf::Mesh& mesh, const 
             }
             else
             {
-                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, tangentAccessor,
-                    [&](fastgltf::math::fvec3 tang, std::size_t index)
+                fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(asset, tangentAccessor,
+                    [&](fastgltf::math::fvec4 tang, std::size_t index)
                     {
                         Vertex& vertex = primitive.vertices[index];
-                        vertex.tangent = glm::vec3{ tang.x(), tang.y(), tang.z() };
+                        vertex.tangent = glm::vec4{ tang.x(), tang.y(), tang.z(), tang.w() };
                     });
                 primitive.hasTangents = true;
             }
@@ -305,6 +305,9 @@ MeshProcessRequest GLTFProcessor::processMesh(const fastgltf::Mesh& mesh, const 
         writeTexcoordData(baseColorTexcoordIndex, it, asset, primitive.vertices);
         writeTexcoordData(normalTexcoordIndex, it, asset, primitive.vertices);
         writeTexcoordData(metallicRoughnessTexcoordIndex, it, asset, primitive.vertices);
+        primitive.baseColorTexcoordIndex = baseColorTexcoordIndex;
+        primitive.normalTexcoordIndex = normalTexcoordIndex;
+        primitive.metallicRoughnessTexcoordIndex = metallicRoughnessTexcoordIndex;
 
         // -------------------- Colors --------------------
         // Only supporting one color for now

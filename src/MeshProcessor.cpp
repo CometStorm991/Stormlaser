@@ -46,14 +46,19 @@ VulkanMeshes MeshProcessor::processMeshes(const std::vector<MeshProcessRequest>&
 			const std::vector<uint32_t> indices = primitive.indices;
 			vk::DeviceSize verticesSize = vertices.size() * sizeof(Vertex);
 			vk::DeviceSize indicesSize = indices.size() * sizeof(uint32_t);
-			memcpy(vertexDataStaging, vertices.data(), vertices.size() * sizeof(Vertex));
-			memcpy(indexDataStaging, indices.data(), indices.size() * sizeof(uint32_t));
+			memcpy(static_cast<char*>(vertexDataStaging) + vertexOffset, vertices.data(), vertices.size() * sizeof(Vertex));
+			memcpy(static_cast<char*>(indexDataStaging) + indexOffset, indices.data(), indices.size() * sizeof(uint32_t));
+
+			ranges.push_back(VulkanMeshRange{ 
+				indexCount, static_cast<uint32_t>(indices.size()), static_cast<int>(vertexCount),
+				primitive.materialIndex,
+				primitive.baseColorTexcoordIndex, primitive.normalTexcoordIndex, primitive.metallicRoughnessTexcoordIndex,
+				primitive.hasNormals, primitive.hasTangents });
+
 			vertexCount += vertices.size();
 			indexCount += indices.size();
 			vertexOffset += verticesSize;
 			indexOffset += indicesSize;
-
-			ranges.emplace_back(indexCount, indices.size(), vertexCount, primitive.materialIndex, primitive.hasNormals, primitive.hasTangents);
 		}
 	}
 	vertexStagingMemory.unmapMemory();
