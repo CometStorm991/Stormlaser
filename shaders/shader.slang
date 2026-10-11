@@ -33,7 +33,7 @@ struct VSInput
 {
     float3 inPosition;
     float3 inNormal;
-    float3 inTangent;
+    float4 inTangent;
     float2 inTexCoords[2];
     float3 inColor0;
 };
@@ -44,20 +44,71 @@ struct VSOutput
     float3 worldPos;
     float3 normal;
     float2 normalMapUV;
-    float3 tangent;
+    float4 tangent;
     float2 baseColorUV;
 };
+
+float4x4 inverse(float4x4 m)
+{
+    float n11 = m[0][0], n12 = m[1][0], n13 = m[2][0], n14 = m[3][0];
+    float n21 = m[0][1], n22 = m[1][1], n23 = m[2][1], n24 = m[3][1];
+    float n31 = m[0][2], n32 = m[1][2], n33 = m[2][2], n34 = m[3][2];
+    float n41 = m[0][3], n42 = m[1][3], n43 = m[2][3], n44 = m[3][3];
+
+    float t11 = n23 * n34 * n42 - n24 * n33 * n42 + n24 * n32 * n43 - n22 * n34 * n43 - n23 * n32 * n44 + n22 * n33 * n44;
+    float t12 = n14 * n33 * n42 - n13 * n34 * n42 - n14 * n32 * n43 + n11 * n34 * n43 + n13 * n32 * n44 - n11 * n33 * n44;
+    float t13 = n13 * n24 * n42 - n14 * n23 * n42 + n14 * n22 * n43 - n11 * n24 * n43 - n13 * n22 * n44 + n11 * n23 * n44;
+    float t14 = n14 * n23 * n32 - n13 * n24 * n32 - n14 * n22 * n33 + n11 * n24 * n33 + n13 * n22 * n34 - n11 * n23 * n34;
+
+    float det = n11 * t11 + n12 * t12 + n13 * t13 + n14 * t14;
+
+    if (det == 0.0)
+    {
+        // Return a zero matrix or identity matrix if singular
+        return float4x4(0.0);
+    }
+
+    float idet = 1.0 / det;
+
+    float4x4 ret;
+    ret[0][0] = t11 * idet;
+    ret[0][1] = (n24 * n33 * n41 - n23 * n34 * n41 - n24 * n31 * n43 + n21 * n34 * n43 + n23 * n31 * n44 - n21 * n33 * n44) * idet;
+    ret[0][2] = (n22 * n34 * n41 - n24 * n32 * n41 + n24 * n31 * n42 - n21 * n34 * n42 - n22 * n31 * n44 + n21 * n32 * n44) * idet;
+    ret[0][3] = (n23 * n32 * n41 - n22 * n33 * n41 - n23 * n31 * n42 + n21 * n33 * n42 + n22 * n31 * n43 - n21 * n32 * n43) * idet;
+
+    ret[1][0] = t12 * idet;
+    ret[1][1] = (n13 * n34 * n41 - n14 * n33 * n41 + n14 * n31 * n43 - n11 * n34 * n43 - n13 * n31 * n44 + n11 * n33 * n44) * idet;
+    ret[1][2] = (n14 * n32 * n41 - n12 * n34 * n41 - n14 * n31 * n42 + n11 * n34 * n42 + n12 * n31 * n44 - n11 * n32 * n44) * idet;
+    ret[1][3] = (n12 * n33 * n41 - n13 * n32 * n41 + n13 * n31 * n42 - n11 * n33 * n42 - n12 * n31 * n43 + n11 * n32 * n43) * idet;
+
+    ret[2][0] = t13 * idet;
+    ret[2][1] = (n14 * n23 * n41 - n13 * n24 * n41 - n14 * n21 * n43 + n11 * n24 * n43 + n13 * n21 * n44 - n11 * n23 * n44) * idet;
+    ret[2][2] = (n12 * n24 * n41 - n14 * n22 * n41 + n14 * n21 * n42 - n11 * n24 * n42 - n12 * n21 * n44 + n11 * n22 * n44) * idet;
+    ret[2][3] = (n13 * n22 * n41 - n12 * n23 * n41 - n13 * n21 * n42 + n11 * n23 * n42 + n12 * n21 * n43 - n11 * n22 * n43) * idet;
+
+    ret[3][0] = t14 * idet;
+    ret[3][1] = (n13 * n24 * n31 - n14 * n23 * n31 + n14 * n21 * n33 - n11 * n24 * n33 - n13 * n21 * n34 + n11 * n23 * n34) * idet;
+    ret[3][2] = (n14 * n22 * n31 - n12 * n24 * n31 - n14 * n21 * n32 + n11 * n24 * n32 + n12 * n21 * n34 - n11 * n22 * n34) * idet;
+    ret[3][3] = (n12 * n23 * n31 - n13 * n22 * n31 + n13 * n21 * n32 - n11 * n23 * n32 - n12 * n21 * n33 + n11 * n22 * n33) * idet;
+
+    return ret;
+}
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input)
 {
-
     VSOutput output;
-    output.pos = mul(ubo.proj, mul(ubo.view, mul(ubo.model, float4(input.inPosition, 1.0))));
-    output.worldPos = input.inPosition;
-    output.normal = input.inNormal;
+    float4 world = mul(ubo.model, float4(input.inPosition, 1.0));
+    output.pos = mul(ubo.proj, mul(ubo.view, world));
+    output.worldPos = world.xyz;
+
+    float3x3 model3   = (float3x3)ubo.model;
+    float3x3 normMat3 = (float3x3)transpose(inverse(ubo.model));
+
+    output.normal  = normalize(mul(normMat3, input.inNormal));
+    output.tangent = float4(normalize(mul(model3, input.inTangent.xyz)), input.inTangent.w);
+
     output.normalMapUV = input.inTexCoords[pushData.normalTexcoordIndex];
-    output.tangent = input.inTangent;
     output.baseColorUV = input.inTexCoords[pushData.baseColorTexcoordIndex];
     return output;
 }
@@ -83,26 +134,23 @@ float3x3 cotangentFrame(float3 N, float3 p, float2 uv)
 float4 fragMain(VSOutput vertIn) : SV_TARGET
 {
     float3 flatN = normalize(cross(ddx(vertIn.worldPos), ddy(vertIn.worldPos)));
-    float3 N     = vertIn.normal;
-    N = (!pushData.hasNormals || dot(N, N) < 1e-8) ? flatN : normalize(N); // Also checks if given normal is degenerate
+    float3 N = vertIn.normal;
+    N = (!pushData.hasNormals || dot(N, N) < 1e-8) ? flatN : normalize(N);
 
-    float3x3 flatTBN = cotangentFrame(N, vertIn.worldPos, vertIn.normalMapUV);
-    float3 T = vertIn.tangent;
-    float3 B = normalize(cross(N, T));
-    float3x3 TBN = float3x3(T, B, N);
-    TBN = (!pushData.hasTangents || dot(T, T) < 1e-8) ? flatTBN : TBN;
+    float3 T = vertIn.tangent.xyz;
+    bool validT = pushData.hasTangents && dot(T, T) > 1e-8;
+    T = normalize(T - N * dot(N, T)); // Gram-Schmidt
+    float3 B = cross(N, T) * vertIn.tangent.w;
+    float3x3 TBN = validT ? float3x3(T, B, N)
+                          : cotangentFrame(N, vertIn.worldPos, vertIn.normalMapUV);
 
     Sampler2D normalTexture = textures[materials[pushData.materialIndex].normalTextureIndex];
-    float3 normMap = normalTexture.Sample(vertIn.normalMapUV).xyz;
-    normMap = normMap * 2.0f - 1.0f;
-    float3 norm = normalize(mul(TBN, normMap));
+    float3 normMap = normalTexture.Sample(vertIn.normalMapUV).xyz * 2.0 - 1.0;
+    float3 norm = normalize(mul(normMap, TBN));
 
     Sampler2D baseColorTexture = textures[materials[pushData.materialIndex].baseColorTextureIndex];
-    //Sampler2D baseColorTexture = textures[1];
     float3 baseColor = baseColorTexture.Sample(vertIn.baseColorUV).xyz;
-    if (all(baseColor == float3(0.0f, 0.0f, 0.0f)))
-    {
-        return materials[pushData.materialIndex].baseColorFactor;
-    }
-    return float4(baseColor, 1.0f);
+    baseColor *= 0.7 + 0.3 * dot(norm, float3(1.0, 1.0, 1.0));
+
+    return float4(baseColor, 1.0);             
 }

@@ -90,8 +90,8 @@ ImageProcessRequest GLTFProcessor::processImage(const fastgltf::Image& image, co
         .pixelData = data,
         .width = static_cast<uint32_t>(width),
         .height = static_cast<uint32_t>(height),
-        .nrChannels = static_cast<uint32_t>(nrChannels),
-        .format = vk::Format::eR8G8B8A8Srgb,
+        .nrChannels = static_cast<uint32_t>(4),
+        .format = vk::Format::eR8G8B8A8Unorm,
         .generateMipmaps = false
     };
 }

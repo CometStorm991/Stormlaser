@@ -1207,7 +1207,7 @@ void Application::updateUniformBuffer(uint32_t currentImage, float time)
 	UniformBufferObject ubo{};
 	ubo.model = glm::mat4(1.0f);
 	ubo.model = glm::scale(ubo.model, glm::vec3{ 0.01f, 0.01f, 0.01f });
-	ubo.model = rotate(ubo.model, time * glm::radians(90.0f) / 50.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+	ubo.model = rotate(ubo.model, time * glm::radians(90.0f) / 500.0f, glm::vec3(0.0f, 1.0f, 0.0f));
 	//ubo.view = lookAt(glm::vec3(2.0f, 10.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
 	ubo.view = view;
 	ubo.proj = glm::perspective(

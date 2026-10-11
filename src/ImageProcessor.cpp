@@ -58,6 +58,8 @@ std::vector<VulkanImage> ImageProcessor::processImages(const std::vector<ImagePr
         offset += paddedImageSize;
     }
 
+    commandBuffer.pipelineBarrier2({ .imageMemoryBarrierCount = static_cast<uint32_t>(toReadBarriers.size()), .pImageMemoryBarriers = toReadBarriers.data() });
+
     endSingleTimeCommands(std::move(commandBuffer), queue);
 
     stagingBufferMemory.unmapMemory();
